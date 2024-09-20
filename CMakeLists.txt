@@ -48,20 +48,38 @@ endif()
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")  # Optimize for release and disable assertions
 
-# Disable interprocedural optimization for debug builds
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
+# Enable Interprocedural Optimization (LTO) for release builds
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
 
-# Add Clang-specific warning flags and sanitizers only for Debug builds
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+# Enable warnings, pedantic checks, and useful flags
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(VulkanEngine PRIVATE
-            # Warning flags here...
+            -Wall            # Enable all common warnings
+            -Wextra          # Enable extra warnings
+            -Wpedantic       # Enforce strict ISO compliance
+            -Wconversion     # Warn on implicit conversions
+            -Wsign-conversion# Warn on sign conversions
+            -Wshadow         # Warn if variables shadow others
+            -Wnon-virtual-dtor # Warn about non-virtual destructors in base classes
+            -Wold-style-cast # Warn if old-style C casts are used
+            -Werror          # Treat all warnings as errors
     )
+
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        target_link_options(VulkanEngine PRIVATE
-                -fsanitize=address
-                -fsanitize=undefined
-        )
+        # Add address and undefined behavior sanitizers for Clang and GCC
+        target_compile_options(VulkanEngine PRIVATE -fsanitize=address -fsanitize=undefined)
+        target_link_options(VulkanEngine PRIVATE -fsanitize=address -fsanitize=undefined)
     endif()
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(VulkanEngine PRIVATE
+            /W4             # Equivalent to -Wall on MSVC
+            /WX             # Treat warnings as errors
+            /permissive-    # Enforce standards conformance
+            /EHsc           # Enable proper exception handling
+    )
 endif()
+
+# Set the output directory
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR})
