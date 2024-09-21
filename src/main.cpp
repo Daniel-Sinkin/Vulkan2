@@ -27,8 +27,11 @@ constexpr bool enableValidationLayers = true;
 #endif
 
 #define VULKAN_CHECK(x) if ((x) != VK_SUCCESS) throw runtime_error("Failed on " #x);
-
 #define VULKAN_ALLOCATOR = nullptr
+
+constexpr bool SETTING_PHYSICAL_DEVICE_REQUIRE_GPU = true;
+constexpr bool SETTING_PHYSICAL_DEVICE_REQUIRE_NOT_INTEGRATED_GPU = false;
+constexpr bool SETTING_PHYSICAL_DEVICE_REQUIRE_GEOMETRY_SHADER = false;
 
 VKAPI_ATTR auto VKAPI_CALL debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -63,15 +66,16 @@ int DEFAULT_WINDOW_HEIGHT = 1080;
 
 VkInstance g_instance = VK_NULL_HANDLE;
 VkDebugUtilsMessengerEXT g_vk_debugMessenger = VK_NULL_HANDLE;
-
 VkSurfaceKHR g_surface = VK_NULL_HANDLE;
-
+VkPhysicalDevice g_physicalDevice = VK_NULL_HANDLE;
+VkDevice g_device = VK_NULL_HANDLE;
 VkAllocationCallbacks* g_allocator = nullptr;
 
 GLFWwindow * g_window = nullptr;
 bool g_framebufferResized = false;
 
-int main() {
+void initializeEngine() {
+
     cout << "Initializing Program.\n";
 
     cout << "Initializing Window.\n";
@@ -198,10 +202,53 @@ int main() {
     vkEnumeratePhysicalDevices(g_instance, &physicalDeviceCount, nullptr);
     if(physicalDeviceCount == 0) throw runtime_error("No vulkan compatible physical device found!.");
     if(physicalDeviceCount == 1) {
-        cout << "There is exactly one physical device availiable.\n";
+        cout << "There is exactly one physical device available.\n";
     } else {
-        cout << "There are exactly" << physicalDeviceCount << "physical device availiable.\n";
+        cout << "There are exactly" << physicalDeviceCount << "physical device available.\n";
     }
+    vector<VkPhysicalDevice> allPhysicalDevices(physicalDeviceCount);
+    vkEnumeratePhysicalDevices(g_instance, &physicalDeviceCount, allPhysicalDevices.data());
+    for(auto physicalDevice: allPhysicalDevices) {
+        VkPhysicalDeviceProperties deviceProperties;
+        VkPhysicalDeviceFeatures deviceFeatures;
+        vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
+        vkGetPhysicalDeviceFeatures(physicalDevice, &deviceFeatures);
+
+        if constexpr (SETTING_PHYSICAL_DEVICE_REQUIRE_GPU) {
+            if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU) {
+                cout << "Device is unsuitable because it is a CPU!\n";
+                continue;
+            }
+        }
+        if constexpr (SETTING_PHYSICAL_DEVICE_REQUIRE_NOT_INTEGRATED_GPU) {
+            if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+                cout << "Device is unsuitable because it is an integrated gpu!\n";
+                continue;
+            }
+        }
+        if constexpr (SETTING_PHYSICAL_DEVICE_REQUIRE_GEOMETRY_SHADER) {
+            if (!deviceFeatures.geometryShader) {
+                cout << "Device is unsuitable because it does not support geometry shaders!\n";
+                continue;
+            }
+        }
+        cout << "Found suitable physical device!\n";
+        g_physicalDevice = physicalDevice;
+        break;
+    }
+    if(g_physicalDevice == VK_NULL_HANDLE) throw runtime_error("Couldn't find suitable physical device");
+
+    VkPhysicalDeviceFeatures device_features{.samplerAnisotropy = VK_TRUE};
+    VkDeviceCreateInfo deviceCreateInfo{
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pNext = nullptr,
+        .queueCreateInfoCount = 0,
+        .pQueueCreateInfos = nullptr,
+        .enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
+        .ppEnabledExtensionNames = deviceExtensions.data(),
+        .pEnabledFeatures = &device_features
+    };
+    vkCreateDevice(g_physicalDevice, &deviceCreateInfo, g_allocator, &g_device);
 
     cout << "Finished Initializing Program.\n";
 
@@ -212,7 +259,7 @@ int main() {
         float frameTime = elapsed.count();
 
         glfwPollEvents();
-        cout << "We already ran for " << frameTime << " seconds!\n";
+        cout << "We already ran for a total of " << frameTime << " seconds!\n";
 
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
     }
@@ -221,10 +268,14 @@ int main() {
     const auto vulkan_FPN_debugMessengerDestroy = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(g_instance, "vkDestroyDebugUtilsMessengerEXT"));
     if (vulkan_FPN_debugMessengerDestroy != nullptr) vulkan_FPN_debugMessengerDestroy(g_instance, g_vk_debugMessenger, g_allocator);
 
+    vkDestroyDevice(g_device, g_allocator);
     vkDestroySurfaceKHR(g_instance, g_surface, g_allocator);
     vkDestroyInstance(g_instance, g_allocator);
     cout << "Finished cleanup.\n";
+}
 
+int main() {
+    initializeEngine();
 
     return EXIT_SUCCESS;
 }
